@@ -135,7 +135,12 @@ const state = {
     intervalId: null
   },
   leafletMap: null,
-  mapLayers: []
+  mapLayers: [],
+  activeBaseLayerName: "google_hybrid",
+  currentBaseLayer: null,
+  pinnedMarker: null,
+  inspectedLocation: null,
+  reverseGeocodeCache: new Map()
 };
 
 // Color tier mapping
@@ -206,6 +211,61 @@ function initEventListeners() {
       setTimeout(() => state.leafletMap.invalidateSize(), 150);
     }
   });
+
+  // Google Map Base Layer Switcher Pills
+  document.querySelectorAll(".layer-pill-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const layerKey = btn.dataset.layer;
+      switchMapBaseLayer(layerKey);
+    });
+  });
+
+  // Docked Map Inspection Bar Buttons
+  const btnAnalyzeSpot = document.getElementById("btnMapAnalyzeSpot");
+  if (btnAnalyzeSpot) {
+    btnAnalyzeSpot.addEventListener("click", () => {
+      if (state.inspectedLocation) {
+        window.analyzeHeatAtPoint(
+          state.inspectedLocation.lat,
+          state.inspectedLocation.lon,
+          encodeURIComponent(state.inspectedLocation.location_name || state.inspectedLocation.place)
+        );
+      } else {
+        showToast("Hover or click anywhere on the map first to select a location.", "info");
+      }
+    });
+  }
+
+  const btnCopyDetails = document.getElementById("btnMapCopyDetails");
+  if (btnCopyDetails) {
+    btnCopyDetails.addEventListener("click", () => {
+      if (state.inspectedLocation) {
+        window.copyLocationInfo(
+          encodeURIComponent(state.inspectedLocation.location_name || state.inspectedLocation.place),
+          encodeURIComponent(state.inspectedLocation.district || "District Area"),
+          encodeURIComponent(state.inspectedLocation.pincode || "N/A"),
+          `${state.inspectedLocation.lat.toFixed(4)}° N, ${state.inspectedLocation.lon.toFixed(4)}° E`
+        );
+      } else {
+        showToast("Hover or click anywhere on the map first to inspect a location.", "info");
+      }
+    });
+  }
+
+  // Worker Companion View Map CTA Button
+  const btnOpenMapInspector = document.getElementById("btnOpenMapInspector");
+  if (btnOpenMapInspector) {
+    btnOpenMapInspector.addEventListener("click", () => {
+      switchView("municipal");
+      if (state.leafletMap) {
+        setTimeout(() => {
+          state.leafletMap.invalidateSize();
+          const mapEl = document.getElementById("gisMap");
+          if (mapEl) mapEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 150);
+      }
+    });
+  }
 
   // Mobile resize & orientation changes
   window.addEventListener("resize", () => {
@@ -514,6 +574,323 @@ function renderMunicipalKPIs(data) {
   `;
 }
 
+// Base tile layers (Google Maps, Dark Thermal, Esri)
+const TILE_LAYERS = {
+  google_hybrid: L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+    maxZoom: 20,
+    subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+    attribution: 'Tiles &copy; Google Maps &mdash; Satellite Hybrid'
+  }),
+  google_streets: L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+    maxZoom: 20,
+    subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+    attribution: 'Tiles &copy; Google Maps &mdash; Standard'
+  }),
+  dark_thermal: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19,
+    subdomains: 'abcd',
+    attribution: '&copy; OpenStreetMap &copy; CARTO'
+  }),
+  esri_satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Tiles &copy; Esri &mdash; World Imagery'
+  })
+};
+
+function switchMapBaseLayer(layerKey) {
+  if (!state.leafletMap || !TILE_LAYERS[layerKey]) return;
+  if (state.currentBaseLayer) {
+    state.leafletMap.removeLayer(state.currentBaseLayer);
+  }
+  state.currentBaseLayer = TILE_LAYERS[layerKey];
+  state.currentBaseLayer.addTo(state.leafletMap);
+  state.activeBaseLayerName = layerKey;
+
+  document.querySelectorAll(".layer-pill-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.layer === layerKey);
+  });
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function showToast(message, type = "success") {
+  const container = document.getElementById("toastContainer");
+  if (!container) return;
+  const toast = document.createElement("div");
+  toast.className = `toast-message ${type === "success" ? "toast-success" : ""}`;
+  toast.innerHTML = `<span class="toast-icon">${type === "success" ? "✅" : "ℹ️"}</span><span>${escapeHtml(message)}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.animation = "toastSlideOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards";
+    setTimeout(() => toast.remove(), 300);
+  }, 3200);
+}
+
+window.copyLocationInfo = function(encPlace, encDistrict, encPincode, coords) {
+  const place = decodeURIComponent(encPlace);
+  const district = decodeURIComponent(encDistrict);
+  const pincode = decodeURIComponent(encPincode);
+  const text = `📍 Location: ${place}\n🏛️ District: ${district}\n📮 PIN Code: ${pincode}\n🌐 GPS: ${coords}`;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(`Copied: ${place} (District: ${district}, PIN: ${pincode})`);
+  }).catch(() => {
+    showToast(`Selected: ${place} (PIN: ${pincode})`);
+  });
+};
+
+window.analyzeHeatAtPoint = function(lat, lon, encPlace) {
+  const place = decodeURIComponent(encPlace);
+  state.currentCity = "custom";
+  state.currentCoords.lat = lat;
+  state.currentCoords.lon = lon;
+  state.currentCoords.name = place;
+  fetchRealtimeData();
+  showToast(`Analyzing real-time heatwave risk for ${place}...`);
+};
+
+let hoverDebounceTimer = null;
+let hoverAbortController = null;
+
+async function fetchReverseGeocode(lat, lon) {
+  const cacheKey = `${lat.toFixed(3)}_${lon.toFixed(3)}`;
+  if (state.reverseGeocodeCache.has(cacheKey)) {
+    return state.reverseGeocodeCache.get(cacheKey);
+  }
+
+  try {
+    const res = await fetch(`/api/reverse-geocode?lat=${lat}&lon=${lon}`);
+    if (!res.ok) throw new Error("Geocode request failed");
+    const data = await res.json();
+    state.reverseGeocodeCache.set(cacheKey, data);
+    return data;
+  } catch (err) {
+    return {
+      location_name: `Location (${lat.toFixed(4)}, ${lon.toFixed(4)})`,
+      place: "Regional Locality",
+      district: "Local District",
+      pincode: "N/A",
+      state: "India",
+      country: "India",
+      lat,
+      lon,
+      display_name: `Coordinates: ${lat.toFixed(4)}° N, ${lon.toFixed(4)}° E`
+    };
+  }
+}
+
+function updateHoverDisplay(data) {
+  const mctPlace = document.getElementById("mctPlace");
+  const mctDistrict = document.getElementById("mctDistrict");
+  const mctPincode = document.getElementById("mctPincode");
+  const mctCoords = document.getElementById("mctCoords");
+
+  const barPlaceName = document.getElementById("barPlaceName");
+  const barDistrict = document.getElementById("barDistrict");
+  const barPincode = document.getElementById("barPincode");
+  const barCoords = document.getElementById("barCoords");
+
+  const placeName = data.location_name || data.place || "Selected Point";
+  const district = data.district || "District Area";
+  const pincode = (data.pincode && data.pincode !== "N/A") ? data.pincode : "Not Available";
+  const coordsStr = `${data.lat.toFixed(4)}° N, ${data.lon.toFixed(4)}° E`;
+
+  // Floating tooltip
+  if (mctPlace) mctPlace.textContent = placeName;
+  if (mctDistrict) mctDistrict.textContent = district;
+  if (mctPincode) mctPincode.textContent = pincode;
+  if (mctCoords) mctCoords.textContent = coordsStr;
+
+  // Docked bottom inspect bar
+  if (barPlaceName) barPlaceName.textContent = placeName;
+  if (barDistrict) barDistrict.textContent = district;
+  if (barPincode) barPincode.textContent = pincode;
+  if (barCoords) barCoords.textContent = coordsStr;
+
+  state.inspectedLocation = data;
+}
+
+function setupMapInteraction() {
+  if (!state.leafletMap) return;
+  const tooltip = document.getElementById("mapCursorTooltip");
+  const mctPlace = document.getElementById("mctPlace");
+  const mctDistrict = document.getElementById("mctDistrict");
+  const mctPincode = document.getElementById("mctPincode");
+  const mctCoords = document.getElementById("mctCoords");
+  const mapCanvasContainer = document.getElementById("mapCanvasContainer");
+
+  // Mouse move on map (Cursor hover inspection)
+  state.leafletMap.on("mousemove", (e) => {
+    const lat = e.latlng.lat;
+    const lon = e.latlng.lng;
+    const coordsStr = `${lat.toFixed(4)}° N, ${lon.toFixed(4)}° E`;
+
+    if (mapCanvasContainer && tooltip) {
+      const containerRect = mapCanvasContainer.getBoundingClientRect();
+      const mouseX = e.originalEvent.clientX - containerRect.left;
+      const mouseY = e.originalEvent.clientY - containerRect.top;
+
+      let posX = mouseX + 16;
+      let posY = mouseY + 16;
+      if (posX + 280 > containerRect.width) {
+        posX = mouseX - 280 - 10;
+      }
+      if (posY + 160 > containerRect.height) {
+        posY = mouseY - 160 - 10;
+      }
+      if (posX < 10) posX = 10;
+      if (posY < 10) posY = 10;
+
+      tooltip.style.left = `${posX}px`;
+      tooltip.style.top = `${posY}px`;
+      tooltip.classList.remove("hidden");
+    }
+
+    if (mctCoords) mctCoords.textContent = coordsStr;
+
+    // Check client cache for instantaneous hover response (0ms latency!)
+    const cacheKey = `${lat.toFixed(3)}_${lon.toFixed(3)}`;
+    if (state.reverseGeocodeCache.has(cacheKey)) {
+      const cached = state.reverseGeocodeCache.get(cacheKey);
+      updateHoverDisplay(cached);
+      return;
+    }
+
+    // While cursor is gliding, display responsive progress
+    if (mctPlace) mctPlace.textContent = "Resolving locality...";
+    if (mctDistrict) mctDistrict.textContent = "Inspecting...";
+    if (mctPincode) mctPincode.textContent = "...";
+
+    // Debounce reverse geocode API request when cursor pauses
+    clearTimeout(hoverDebounceTimer);
+    if (hoverAbortController) hoverAbortController.abort();
+
+    hoverDebounceTimer = setTimeout(async () => {
+      hoverAbortController = new AbortController();
+      try {
+        const res = await fetch(`/api/reverse-geocode?lat=${lat}&lon=${lon}`, {
+          signal: hoverAbortController.signal
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        state.reverseGeocodeCache.set(cacheKey, data);
+        updateHoverDisplay(data);
+      } catch (err) {
+        if (err.name !== "AbortError" && mctPlace) {
+          mctPlace.textContent = `Point (${lat.toFixed(3)}, ${lon.toFixed(3)})`;
+        }
+      }
+    }, 220);
+  });
+
+  state.leafletMap.on("mouseout", () => {
+    if (tooltip) tooltip.classList.add("hidden");
+  });
+
+  // Click handler: Drop pin & open full details popup
+  state.leafletMap.on("click", (e) => {
+    dropInspectionPin(e.latlng.lat, e.latlng.lng);
+  });
+}
+
+async function dropInspectionPin(lat, lon) {
+  if (!state.leafletMap) return;
+
+  const pulsePinIcon = L.divIcon({
+    className: "custom-pin-container",
+    html: `
+      <div class="custom-pin-pulse"></div>
+      <svg class="custom-pin-svg" viewBox="0 0 384 512">
+        <path fill="#f97316" d="M172.268 501.67C26.97 291.031 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.031-172.268 309.67-9.535 13.774-29.93 13.773-39.464 0zM192 272c44.183 0 80-35.817 80-80s-35.817-80-80-80-80 35.817-80 80 35.817 80 80 80z"/>
+      </svg>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -30]
+  });
+
+  if (state.pinnedMarker) {
+    state.leafletMap.removeLayer(state.pinnedMarker);
+  }
+
+  state.pinnedMarker = L.marker([lat, lon], { icon: pulsePinIcon }).addTo(state.leafletMap);
+
+  const initialPopup = `
+    <div class="map-popup-card">
+      <div class="mpop-header">
+        <span class="mpop-icon">📍</span>
+        <div class="mpop-title-wrap">
+          <div class="mpop-title">Resolving Location...</div>
+          <span class="mpop-badge">PINPOINT INSPECTOR</span>
+        </div>
+      </div>
+      <div style="font-size:12px; color:#94a3b8; text-align:center; padding:14px 0;">
+        Locating place name, district and postal PIN code...
+      </div>
+    </div>
+  `;
+  state.pinnedMarker.bindPopup(initialPopup, { maxWidth: 320, className: 'glassmorphic-popup' }).openPopup();
+
+  const data = await fetchReverseGeocode(lat, lon);
+  updateHoverDisplay(data);
+
+  const place = data.location_name || data.place || `Location (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
+  const district = data.district || "District Area";
+  const pincode = (data.pincode && data.pincode !== "N/A") ? data.pincode : "Not Available";
+  const coordsStr = `${lat.toFixed(4)}° N, ${lon.toFixed(4)}° E`;
+  const addressStr = data.display_name || `${place}, ${district}`;
+
+  const fullPopup = `
+    <div class="map-popup-card">
+      <div class="mpop-header">
+        <span class="mpop-icon">📍</span>
+        <div class="mpop-title-wrap">
+          <h4 class="mpop-title">${escapeHtml(place)}</h4>
+          <span class="mpop-badge">INSPECTED POINT</span>
+        </div>
+      </div>
+
+      <div class="mpop-grid">
+        <div class="mpop-item">
+          <div class="mpop-lbl">DISTRICT</div>
+          <div class="mpop-val" title="${escapeHtml(district)}">🏛️ ${escapeHtml(district)}</div>
+        </div>
+        <div class="mpop-item">
+          <div class="mpop-lbl">PIN CODE</div>
+          <div class="mpop-val pin-code">📮 ${escapeHtml(pincode)}</div>
+        </div>
+      </div>
+
+      <div class="mpop-address-box">
+        <strong style="color:#f8fafc; display:block; margin-bottom:2px;">Administrative Address:</strong>
+        ${escapeHtml(addressStr)}
+      </div>
+
+      <div class="mpop-coords-tag">
+        <span>🌐 GPS: ${coordsStr}</span>
+      </div>
+
+      <div class="mpop-actions">
+        <button class="btn-mpop-action btn-mpop-analyze" onclick="analyzeHeatAtPoint(${lat}, ${lon}, '${encodeURIComponent(place)}')">
+          ⚡ Analyze Heat Risk
+        </button>
+        <button class="btn-mpop-action btn-mpop-copy" onclick="copyLocationInfo('${encodeURIComponent(place)}', '${encodeURIComponent(district)}', '${encodeURIComponent(pincode)}', '${coordsStr}')">
+          📋 Copy Details
+        </button>
+      </div>
+    </div>
+  `;
+
+  state.pinnedMarker.setPopupContent(fullPopup);
+}
+
 function renderMunicipalMap() {
   const lat = state.currentCoords.lat || 23.0225;
   const lon = state.currentCoords.lon || 72.5714;
@@ -525,16 +902,16 @@ function renderMunicipalMap() {
       attributionControl: false
     }).setView([lat, lon], 13);
 
-    // High-Resolution Satellite Base Map (Esri World Imagery - No API Key Required)
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19,
-      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
-    }).addTo(state.leafletMap);
+    // Default to Google Hybrid (Satellite + Roads & Place Labels)
+    state.currentBaseLayer = TILE_LAYERS.google_hybrid;
+    state.currentBaseLayer.addTo(state.leafletMap);
+
+    setupMapInteraction();
   } else {
     state.leafletMap.setView([lat, lon], 13);
   }
 
-  // Clear existing layers
+  // Clear existing overlay layers
   state.mapLayers.forEach(l => state.leafletMap.removeLayer(l));
   state.mapLayers = [];
 
@@ -545,18 +922,24 @@ function renderMunicipalMap() {
   const heatCircle = L.circle([lat, lon], {
     color: color,
     fillColor: color,
-    fillOpacity: 0.35,
+    fillOpacity: 0.3,
     radius: 2800,
     weight: 2
   }).addTo(state.leafletMap);
 
   heatCircle.bindPopup(`
-    <div style="font-family:sans-serif; color:#000;">
-      <h4 style="margin:0 0 4px;">${state.currentCoords.name}</h4>
-      <p style="margin:0; font-size:12px;">Thermal Stress Tier: <strong>${tier}</strong></p>
-      <p style="margin:4px 0 0; font-size:11px;">Lack of overnight cooling penalty applied.</p>
+    <div class="map-popup-card" style="width:260px;">
+      <div class="mpop-header">
+        <span class="mpop-icon">🔥</span>
+        <div class="mpop-title-wrap">
+          <h4 class="mpop-title">${escapeHtml(state.currentCoords.name)}</h4>
+          <span class="mpop-badge" style="background:${color}22; color:${color}; border-color:${color}">TIER ${tier} THERMAL LOAD</span>
+        </div>
+      </div>
+      <p style="font-size:12px; color:#cbd5e1; margin:0 0 8px;">Active physiological WBGT monitoring zone.</p>
+      <div style="font-size:11px; color:#38bdf8;">Click anywhere on map to inspect other wards & PIN codes.</div>
     </div>
-  `);
+  `, { className: 'glassmorphic-popup' });
   state.mapLayers.push(heatCircle);
 
   // 2. Real-Time Operational Shelters & PHC Markers (Surrounding location)
@@ -577,13 +960,24 @@ function renderMunicipalMap() {
     }).addTo(state.leafletMap);
 
     marker.bindPopup(`
-      <div style="font-family:sans-serif; color:#000;">
-        <h4 style="margin:0 0 2px;">📍 ${s.name}</h4>
-        <div style="font-size:11px; color:#555;">${s.type}</div>
-        <div style="font-size:11px; color:#16a34a; font-weight:bold; margin-top:4px;">● OPERATIONAL (Open 24/7)</div>
+      <div class="map-popup-card" style="width:250px;">
+        <div class="mpop-header">
+          <span class="mpop-icon">🏥</span>
+          <div class="mpop-title-wrap">
+            <h4 class="mpop-title">${escapeHtml(s.name)}</h4>
+            <span class="mpop-badge" style="color:#10b981; border-color:#10b981">OPERATIONAL (24/7)</span>
+          </div>
+        </div>
+        <div style="font-size:12px; color:#94a3b8; margin-bottom:6px;">${escapeHtml(s.type)}</div>
+        <div style="font-size:11px; color:#34d399; font-weight:600;">✓ Free ORS & air-conditioned cooling recovery.</div>
       </div>
-    `);
+    `, { className: 'glassmorphic-popup' });
     state.mapLayers.push(marker);
+  });
+
+  // Seed current location in inspect display
+  fetchReverseGeocode(lat, lon).then(data => {
+    updateHoverDisplay(data);
   });
 }
 

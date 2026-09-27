@@ -326,6 +326,20 @@
           <!-- Dynamically populated from real-time API forecast -->
         </div>
       </div>
+
+      <!-- Interactive Google GIS Map Quick Access Banner -->
+      <div class="worker-map-cta-card">
+        <div class="cta-left">
+          <div class="cta-badge">GOOGLE GIS MAP INSPECTOR</div>
+          <h3 class="cta-title">🗺️ Explore Hyperlocal Heat Risk, Districts & Postal PIN Codes</h3>
+          <p class="cta-desc">Move your mouse or tap anywhere on the high-resolution interactive Google Map to instantly inspect location names, district boundaries, 6-digit postal PIN codes, and active municipal cooling shelters.</p>
+        </div>
+        <button class="btn-open-map-inspector" id="btnOpenMapInspector">
+          <span class="btn-icon">📍</span>
+          <span>Launch Interactive Map Inspector</span>
+          <span class="btn-arr">&rarr;</span>
+        </button>
+      </div>
     </section>
 
     <!-- ==================== VIEW 2: MUNICIPAL COMMAND & GIS DASHBOARD ==================== -->
@@ -356,13 +370,25 @@
 
       <!-- GIS Map & Ward Vulnerability Split -->
       <div class="gis-split-container">
-        <!-- Interactive Leaflet Map -->
+        <!-- Interactive Google GIS Map & Hyperlocal Inspector -->
         <div class="map-card-wrapper">
           <div class="map-header-bar">
             <div class="map-title-block">
               <span class="icon">🗺️</span>
-              <span class="title">Hyperlocal GIS Thermal & Shelter Map</span>
+              <div>
+                <span class="title">Google GIS Thermal & Ward Location Inspector</span>
+                <span class="map-sub-hint">🖱️ Hover or click anywhere to inspect place, district & PIN code</span>
+              </div>
             </div>
+            
+            <!-- Google Maps Base Layer Switcher -->
+            <div class="map-layer-switcher" id="mapLayerSwitcher">
+              <button class="layer-pill-btn active" data-layer="google_hybrid" title="Google Satellite Imagery with Roads & Place Labels">🛰️ Google Hybrid</button>
+              <button class="layer-pill-btn" data-layer="google_streets" title="Google Standard Street & Road Map">🗺️ Google Roads</button>
+              <button class="layer-pill-btn" data-layer="dark_thermal" title="High-Contrast Dark Thermal Map">🌙 Dark Thermal</button>
+              <button class="layer-pill-btn" data-layer="esri_satellite" title="Esri High-Resolution Satellite Map">🌍 Esri Satellite</button>
+            </div>
+
             <div class="map-legend">
               <span class="leg-item"><span class="leg-dot tier-0"></span> Minimal</span>
               <span class="leg-item"><span class="leg-dot tier-1"></span> Minor</span>
@@ -372,7 +398,78 @@
               <span class="leg-item"><span class="leg-marker shelter"></span> Shelter / PHC</span>
             </div>
           </div>
-          <div id="gisMap" class="gis-map-canvas"></div>
+
+          <div class="map-canvas-container" id="mapCanvasContainer">
+            <div id="gisMap" class="gis-map-canvas"></div>
+
+            <!-- Floating Cursor Hover HUD (Tracks mouse cursor) -->
+            <div id="mapCursorTooltip" class="map-cursor-tooltip hidden" aria-live="polite">
+              <div class="mct-top">
+                <span class="mct-pin-glow">📍</span>
+                <div class="mct-title-wrap">
+                  <span class="mct-place" id="mctPlace">Inspecting coordinates...</span>
+                  <span class="mct-badge-status" id="mctStatusBadge">HOVER INSPECT</span>
+                </div>
+              </div>
+              <div class="mct-details-grid">
+                <div class="mct-item">
+                  <span class="mct-lbl">DISTRICT</span>
+                  <span class="mct-val" id="mctDistrict">Resolving...</span>
+                </div>
+                <div class="mct-item">
+                  <span class="mct-lbl">PIN CODE</span>
+                  <span class="mct-val mct-highlight" id="mctPincode">--</span>
+                </div>
+              </div>
+              <div class="mct-footer">
+                <span class="mct-coords" id="mctCoords">--</span>
+                <span class="mct-hint">👆 Click to drop pin & analyze</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Docked Bottom Telemetry & Inspection Bar -->
+          <div class="map-live-inspect-bar" id="mapLiveInspectBar">
+            <div class="inspect-field inspect-place-field">
+              <span class="inspect-ico">📍</span>
+              <div class="inspect-text">
+                <div class="inspect-heading">HOVER / SELECTED LOCATION</div>
+                <div class="inspect-val bold-place" id="barPlaceName">Move cursor over map or click any point to inspect</div>
+              </div>
+            </div>
+            <div class="inspect-sep"></div>
+            <div class="inspect-field">
+              <span class="inspect-ico">🏛️</span>
+              <div class="inspect-text">
+                <div class="inspect-heading">DISTRICT</div>
+                <div class="inspect-val" id="barDistrict">--</div>
+              </div>
+            </div>
+            <div class="inspect-sep"></div>
+            <div class="inspect-field">
+              <span class="inspect-ico">📮</span>
+              <div class="inspect-text">
+                <div class="inspect-heading">PIN CODE</div>
+                <div class="inspect-val pin-highlight" id="barPincode">--</div>
+              </div>
+            </div>
+            <div class="inspect-sep"></div>
+            <div class="inspect-field">
+              <span class="inspect-ico">🌐</span>
+              <div class="inspect-text">
+                <div class="inspect-heading">COORDINATES</div>
+                <div class="inspect-val font-mono" id="barCoords">--</div>
+              </div>
+            </div>
+            <div class="inspect-actions">
+              <button id="btnMapAnalyzeSpot" class="btn-inspect-action btn-inspect-analyze" title="Calculate full biometeorological heatwave risk for this spot">
+                ⚡ Analyze Heat Risk
+              </button>
+              <button id="btnMapCopyDetails" class="btn-inspect-action btn-inspect-copy" title="Copy location, district and pincode to clipboard">
+                📋 Copy
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Municipal Action SOP & Ward Vulnerability Table -->
@@ -526,10 +623,8 @@
     </div>
   </div>
 
-  <!-- Audio Alert for Phase Switch (Subtle beep) -->
-  <audio id="audioAlert" preload="none">
-    <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcHCevi4Z4Z15sfZeor5piPz5lo9TZsWkgHCKujoyFeWlhbX6Xp6+cZT8+ZqPU2bFpIBwiro6MhXlpYW1+l6evnGU/Pmaj1Nmx..." type="audio/wav">
-  </audio>
+  <!-- Floating Toast Notification System -->
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
   <script src="/static/app.js"></script>
 </body>

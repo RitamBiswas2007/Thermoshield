@@ -87,6 +87,229 @@ def search_location(query: str) -> List[Dict[str, Any]]:
     return []
 
 
+# Pre-seed preset cities in reverse geocode cache for instant loading
+_REVERSE_GEOCODE_CACHE: Dict[str, Dict[str, Any]] = {
+    f"{round(23.0225, 3)}_{round(72.5714, 3)}": {
+        "location_name": "Navrangpura / Ashram Road, Ahmedabad",
+        "place": "Navrangpura",
+        "district": "Ahmedabad District",
+        "pincode": "380006",
+        "state": "Gujarat",
+        "country": "India",
+        "display_name": "Ashram Road, Navrangpura, Ahmedabad, Gujarat, 380006, India",
+        "lat": 23.0225,
+        "lon": 72.5714
+    },
+    f"{round(28.6139, 3)}_{round(77.2090, 3)}": {
+        "location_name": "Connaught Place / Central Zone, New Delhi",
+        "place": "Connaught Place",
+        "district": "New Delhi District",
+        "pincode": "110001",
+        "state": "Delhi",
+        "country": "India",
+        "display_name": "Connaught Place, New Delhi, Delhi, 110001, India",
+        "lat": 28.6139,
+        "lon": 77.2090
+    },
+    f"{round(22.5726, 3)}_{round(88.3639, 3)}": {
+        "location_name": "Burrabazar / Central Zone, Kolkata",
+        "place": "Burrabazar",
+        "district": "Kolkata District",
+        "pincode": "700007",
+        "state": "West Bengal",
+        "country": "India",
+        "display_name": "Burrabazar, Kolkata, West Bengal, 700007, India",
+        "lat": 22.5726,
+        "lon": 88.3639
+    },
+    f"{round(19.0760, 3)}_{round(72.8777, 3)}": {
+        "location_name": "Kurla West, Mumbai",
+        "place": "Kurla West",
+        "district": "Mumbai Suburban District",
+        "pincode": "400070",
+        "state": "Maharashtra",
+        "country": "India",
+        "display_name": "Kurla West, Mumbai Suburban District, Maharashtra, 400070, India",
+        "lat": 19.0760,
+        "lon": 72.8777
+    },
+    f"{round(26.9124, 3)}_{round(75.7873, 3)}": {
+        "location_name": "Johari Bazar / Walled City, Jaipur",
+        "place": "Walled City",
+        "district": "Jaipur District",
+        "pincode": "302002",
+        "state": "Rajasthan",
+        "country": "India",
+        "display_name": "Johari Bazar, Jaipur, Rajasthan, 302002, India",
+        "lat": 26.9124,
+        "lon": 75.7873
+    },
+    f"{round(21.1458, 3)}_{round(79.0882, 3)}": {
+        "location_name": "Satranjipura / Central Zone, Nagpur",
+        "place": "Satranjipura",
+        "district": "Nagpur District",
+        "pincode": "440002",
+        "state": "Maharashtra",
+        "country": "India",
+        "display_name": "Satranjipura, Nagpur, Maharashtra, 440002, India",
+        "lat": 21.1458,
+        "lon": 79.0882
+    },
+    f"{round(13.0827, 3)}_{round(80.2707, 3)}": {
+        "location_name": "Royapuram Zone 5, Chennai",
+        "place": "Royapuram",
+        "district": "Chennai District",
+        "pincode": "600013",
+        "state": "Tamil Nadu",
+        "country": "India",
+        "display_name": "Royapuram, Chennai, Tamil Nadu, 600013, India",
+        "lat": 13.0827,
+        "lon": 80.2707
+    },
+    f"{round(17.3850, 3)}_{round(78.4867, 3)}": {
+        "location_name": "Charminar / Old City, Hyderabad",
+        "place": "Charminar",
+        "district": "Hyderabad District",
+        "pincode": "500002",
+        "state": "Telangana",
+        "country": "India",
+        "display_name": "Charminar, Hyderabad, Telangana, 500002, India",
+        "lat": 17.3850,
+        "lon": 78.4867
+    }
+}
+
+def reverse_geocode(lat: float, lon: float) -> Dict[str, Any]:
+    """
+    Reverse geocodes latitude and longitude to obtain place name, district,
+    pincode (postal code), state, and full address.
+    Uses in-memory caching to ensure rapid cursor hover / click responsiveness.
+    """
+    cache_key = f"{round(lat, 3)}_{round(lon, 3)}"
+    if cache_key in _REVERSE_GEOCODE_CACHE:
+        return _REVERSE_GEOCODE_CACHE[cache_key]
+
+    headers = {
+        "User-Agent": "ThermoShield-India/1.0 (sih-heatwave-platform; contact=support@thermoshield.gov.in)"
+    }
+    
+    # 1. Try OpenStreetMap Nominatim
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=jsonv2&addressdetails=1"
+        resp = requests.get(url, headers=headers, timeout=3)
+        if resp.status_code == 200:
+            data = resp.json()
+            addr = data.get("address", {})
+            
+            local_point = (
+                addr.get("suburb") or 
+                addr.get("neighbourhood") or 
+                addr.get("residential") or
+                addr.get("road") or 
+                addr.get("village") or 
+                addr.get("hamlet") or
+                addr.get("commercial") or
+                addr.get("industrial")
+            )
+            city_or_town = (
+                addr.get("city") or 
+                addr.get("town") or 
+                addr.get("municipality") or 
+                addr.get("county") or
+                addr.get("state_district")
+            )
+            
+            if local_point and city_or_town and local_point.lower() != city_or_town.lower():
+                location_name = f"{local_point}, {city_or_town}"
+            else:
+                location_name = local_point or city_or_town or data.get("name") or f"Location ({lat:.3f}, {lon:.3f})"
+                
+            raw_district = (
+                addr.get("state_district") or 
+                addr.get("district") or 
+                addr.get("county") or 
+                addr.get("city_district") or 
+                city_or_town or
+                "District"
+            )
+            district = raw_district.strip()
+            if not district.lower().endswith("district") and district != "District":
+                district_label = f"{district} District"
+            else:
+                district_label = district
+                
+            pincode = addr.get("postcode") or addr.get("postal_code") or ""
+            state = addr.get("state") or addr.get("province") or "India"
+            display_name = data.get("display_name", "")
+
+            # If pincode is missing from Nominatim, attempt quick BigDataCloud check
+            if not pincode:
+                try:
+                    bdc_url = f"https://api.bigdatacloud.net/data/reverse-geocode-client?latitude={lat}&longitude={lon}&localityLanguage=en"
+                    bdc_resp = requests.get(bdc_url, timeout=2)
+                    if bdc_resp.status_code == 200:
+                        bdc_data = bdc_resp.json()
+                        pincode = bdc_data.get("postcode") or "N/A"
+                except Exception:
+                    pincode = "N/A"
+            
+            result = {
+                "location_name": location_name,
+                "place": local_point or city_or_town or "Location",
+                "district": district_label,
+                "pincode": pincode if pincode else "N/A",
+                "state": state,
+                "country": addr.get("country", "India"),
+                "display_name": display_name,
+                "lat": lat,
+                "lon": lon
+            }
+            _REVERSE_GEOCODE_CACHE[cache_key] = result
+            return result
+    except Exception as e:
+        print(f"Primary reverse geocoding error: {e}")
+
+    # 2. Fallback to BigDataCloud API
+    try:
+        url = f"https://api.bigdatacloud.net/data/reverse-geocode-client?latitude={lat}&longitude={lon}&localityLanguage=en"
+        resp = requests.get(url, timeout=4)
+        if resp.status_code == 200:
+            data = resp.json()
+            locality = data.get("locality") or data.get("city") or "Local Ward"
+            district = data.get("principalSubdivision") or "District"
+            pincode = data.get("postcode") or "N/A"
+            state = data.get("principalSubdivision") or "India"
+            result = {
+                "location_name": locality,
+                "place": locality,
+                "district": f"{district} District" if not district.endswith("District") else district,
+                "pincode": pincode,
+                "state": state,
+                "country": data.get("countryName", "India"),
+                "display_name": f"{locality}, {state}, {pincode}",
+                "lat": lat,
+                "lon": lon
+            }
+            _REVERSE_GEOCODE_CACHE[cache_key] = result
+            return result
+    except Exception as e:
+        print(f"Fallback reverse geocoding error: {e}")
+
+    # 3. Graceful fallback coordinates
+    fallback_res = {
+        "location_name": f"Location ({lat:.4f}, {lon:.4f})",
+        "place": "Point Location",
+        "district": "Regional Territory",
+        "pincode": "N/A",
+        "state": "India",
+        "country": "India",
+        "display_name": f"Coordinates: {lat:.4f}° N, {lon:.4f}° E",
+        "lat": lat,
+        "lon": lon
+    }
+    return fallback_res
+
+
 def fetch_realtime_weather(lat: float, lon: float) -> Dict[str, Any]:
     """
     Fetches real-time weather and 7-day hourly telemetry from Open-Meteo API.

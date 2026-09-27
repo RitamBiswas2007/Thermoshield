@@ -13,6 +13,7 @@ from typing import Optional
 from realtime_service import (
     get_realtime_heat_assessment,
     search_location,
+    reverse_geocode,
     PRESET_CITIES,
     SYSTEM_INTEGRATIONS
 )
@@ -69,6 +70,17 @@ def get_integrations_status():
 def search_city(q: str = Query(..., min_length=2, description="City, town, or district name")):
     results = search_location(q)
     return {"query": q, "results": results}
+
+
+@app.get("/api/reverse-geocode")
+def get_reverse_geocode(
+    lat: float = Query(..., description="Latitude of the point"),
+    lon: float = Query(..., description="Longitude of the point")
+):
+    """
+    Reverse geocodes coordinates into location name, district, pincode, state, and address.
+    """
+    return reverse_geocode(lat, lon)
 
 
 @app.get("/api/realtime")
