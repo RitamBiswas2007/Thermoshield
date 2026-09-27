@@ -586,11 +586,16 @@ const TILE_LAYERS = {
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
     attribution: 'Tiles &copy; Google Maps &mdash; Standard'
   }),
-  dark_thermal: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19,
-    subdomains: 'abcd',
-    attribution: '&copy; OpenStreetMap &copy; CARTO'
-  }),
+  dark_thermal: L.layerGroup([
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Tiles &copy; Esri &mdash; World Dark Gray Base'
+    }),
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Tiles &copy; Esri &mdash; Dark Thermal Reference'
+    })
+  ]),
   esri_satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     maxZoom: 19,
     attribution: 'Tiles &copy; Esri &mdash; World Imagery'
@@ -609,6 +614,10 @@ function switchMapBaseLayer(layerKey) {
   document.querySelectorAll(".layer-pill-btn").forEach(b => {
     b.classList.toggle("active", b.dataset.layer === layerKey);
   });
+
+  if (layerKey === "dark_thermal") {
+    showToast("🌙 Dark Thermal GIS Active • High-Contrast Basemap + GEE Thermal Telemetry", "info");
+  }
 }
 
 function escapeHtml(str) {
@@ -1059,8 +1068,11 @@ function closeIntegrationsModal() {
 // PWA Service Worker Registration
 function initServiceWorker() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/static/sw.js")
-      .then(() => console.log("PWA Service Worker registered for offline resilience."))
+    navigator.serviceWorker.register("/static/sw.js?v=2.2")
+      .then((reg) => {
+        reg.update();
+        console.log("PWA Service Worker registered and checked for updates.");
+      })
       .catch(err => console.log("SW registration notice:", err));
   }
 }

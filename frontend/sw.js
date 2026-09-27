@@ -1,4 +1,4 @@
-const CACHE_NAME = "thermoshield-v1";
+const CACHE_NAME = "thermoshield-v2";
 const ASSETS_TO_CACHE = [
   "/",
   "/static/styles.css",
@@ -10,11 +10,6 @@ const ASSETS_TO_CACHE = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE).catch(err => console.log("Cache addAll notice:", err));
-    })
-  );
   self.skipWaiting();
 });
 
@@ -22,9 +17,7 @@ self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.map((k) => {
-          if (k !== CACHE_NAME) return caches.delete(k);
-        })
+        keys.map((k) => caches.delete(k))
       );
     })
   );
@@ -32,18 +25,17 @@ self.addEventListener("activate", (e) => {
 });
 
 self.addEventListener("fetch", (e) => {
-  // Stale-while-revalidate strategy for UI, network-first for API
-  if (e.request.url.includes("/api/")) {
-    e.respondWith(
-      fetch(e.request).catch(() => {
-        return caches.match(e.request);
+  // Network-first strategy for UI & API to ensure immediate live updates
+  e.respondWith(
+    fetch(e.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200 && e.request.method === "GET") {
+          const respClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, respClone));
+        }
+        return networkResponse;
       })
-    );
-  } else {
-    e.respondWith(
-      caches.match(e.request).then((cached) => {
-        return cached || fetch(e.request);
-      })
-    );
-  }
+      .catch(() => caches.match(e.request))
+  );
 });
+
