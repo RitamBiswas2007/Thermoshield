@@ -203,8 +203,22 @@ function initEventListeners() {
   document.getElementById("btnFindNearestShelter").addEventListener("click", () => {
     switchView("municipal");
     if (state.leafletMap) {
+      setTimeout(() => state.leafletMap.invalidateSize(), 150);
+    }
+  });
+
+  // Mobile resize & orientation changes
+  window.addEventListener("resize", () => {
+    if (state.leafletMap && state.currentView === "municipal") {
       state.leafletMap.invalidateSize();
     }
+  });
+  window.addEventListener("orientationchange", () => {
+    setTimeout(() => {
+      if (state.leafletMap && state.currentView === "municipal") {
+        state.leafletMap.invalidateSize();
+      }
+    }, 250);
   });
 }
 
