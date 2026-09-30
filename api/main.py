@@ -102,6 +102,7 @@ def get_realtime_data(
     """
     location_name = "Custom Location"
 
+    preset_pop = None
     if lat is None or lon is None:
         city_key = (city or "ahmedabad").lower()
         if city_key in PRESET_CITIES:
@@ -109,19 +110,22 @@ def get_realtime_data(
             lat = cfg["lat"]
             lon = cfg["lon"]
             location_name = cfg["name"]
+            preset_pop = cfg.get("population")
         else:
             # Fallback to Ahmedabad
             cfg = PRESET_CITIES["ahmedabad"]
             lat = cfg["lat"]
             lon = cfg["lon"]
             location_name = cfg["name"]
+            preset_pop = cfg.get("population")
 
     try:
         data = get_realtime_heat_assessment(
             lat=lat,
             lon=lon,
             location_name=location_name,
-            persona=persona
+            persona=persona,
+            population=preset_pop
         )
         return data
     except Exception as e:
@@ -138,7 +142,8 @@ def dispatch_civic_alert(
     zone: str = Query("Central Industrial Ward"),
     tier: int = Query(3, ge=0, le=4),
     wbgt: float = Query(32.5),
-    excess_mortality: float = Query(34.0)
+    excess_mortality: float = Query(34.0),
+    population: Optional[int] = Query(None)
 ):
     """
     Automated Civic & Regional Heatwave Warning Dispatcher.
@@ -149,13 +154,14 @@ def dispatch_civic_alert(
     # Regional localized heatwave warnings
     messages = {
         "hi": f"⚠️ राष्ट्रीय आपदा प्रबंधन (NDMA) चेतावनी: {zone} में अत्यधिक लू (WBGT {wbgt}°C)। दोपहर 11 से 4 बजे तक धूप में काम न करें। तुरंत ORS पिएं और नजदीकी शीतलन केंद्र जाएं।",
-        "bn": f"⚠️ এনডিএমএ তাপপ্রবাহ সতর্কবার্তা: {zone}-এ বিপজ্জনক তাপপ্রবাহ (WBGT {wbgt}°C)। বেলা ১১টা থেকে ৪টা পর্যন্ত রোদে ভারী কাজ বন্ধ রাখুন। প্রচুর জল ও ওআরএস খান।",
+        "bn": f"⚠️ এনডিএমএ তাপপ্রবাহ সতর্কবার্তা: {zone}-এ বিপজ্জনক তাপপ্রবাহ (WBGT {wbgt}°C)। বেলা ১১টা থেকে ৪টা পর্যন্ত रोদে ভারী কাজ বন্ধ রাখুন। প্রচুর জল ও ওআরএস খান।",
         "ta": f"⚠️ அவசர வெப்ப அலை எச்சரிக்கை: {zone}-ல் WBGT {wbgt}°C எட்டியுள்ளது. காலை 11 முதல் மாலை 4 வரை கடுமையான வெளிப்புற வேலைகளைத் தவிர்க்கவும். ORS அருந்தவும்.",
         "te": f"⚠️ అత్యవసర వడగాల్పుల హెచ్చరిక: {zone} లో ప్రమాదకర ఉష్ణోగ్రత (WBGT {wbgt}°C). ఉదయం 11 నుండి సాయంత్రం 4 వరకు ఎండలో పని ఆపండి. నిరంతరం ORS త్రాగండి.",
         "en": f"⚠️ NDMA & MUNICIPAL HEAT ADVISORY: {zone} has breached WBGT {wbgt}°C (Tier {tier} Danger). High clinical risk (+{excess_mortality}% excess mortality). Mandatory work/rest cycles active."
     }
 
     localized_text = messages.get(language, messages["en"])
+    est_notified = int(round((population or 450000) * 0.72))
 
     return {
         "status": "DISPATCH_SUCCESS",
@@ -164,7 +170,7 @@ def dispatch_civic_alert(
         "language": language,
         "zone": zone,
         "tier": tier,
-        "estimated_citizens_notified": 48500,
+        "estimated_citizens_notified": est_notified,
         "telecom_gateway": "NDMA Cell Broadcast Entity (C-DoT) & WhatsApp Enterprise Cloud API",
         "dispatched_at": datetime.datetime.now().isoformat(),
         "alert_text": localized_text,

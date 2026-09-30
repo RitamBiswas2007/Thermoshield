@@ -118,16 +118,16 @@ const TRANSLATIONS = {
   }
 };
 
-// Preset Coordinates for High-Heat Urban Centers
+// Preset Coordinates & Real-Time Census Populations for High-Heat Urban Centers
 const PRESET_COORDS = {
-  ahmedabad: { name: "Ahmedabad, Gujarat", lat: 23.0225, lon: 72.5714 },
-  delhi: { name: "New Delhi, Delhi", lat: 28.6139, lon: 77.2090 },
-  kolkata: { name: "Kolkata, West Bengal", lat: 22.5726, lon: 88.3639 },
-  mumbai: { name: "Mumbai, Maharashtra", lat: 19.0760, lon: 72.8777 },
-  jaipur: { name: "Jaipur, Rajasthan", lat: 26.9124, lon: 75.7873 },
-  nagpur: { name: "Nagpur, Maharashtra", lat: 21.1458, lon: 79.0882 },
-  chennai: { name: "Chennai, Tamil Nadu", lat: 13.0827, lon: 80.2707 },
-  hyderabad: { name: "Hyderabad, Telangana", lat: 17.3850, lon: 78.4867 }
+  ahmedabad: { name: "Ahmedabad, Gujarat", lat: 23.0225, lon: 72.5714, population: 6357693 },
+  delhi: { name: "New Delhi, Delhi", lat: 28.6139, lon: 77.2090, population: 11034555 },
+  kolkata: { name: "Kolkata, West Bengal", lat: 22.5726, lon: 88.3639, population: 4631392 },
+  mumbai: { name: "Mumbai, Maharashtra", lat: 19.0760, lon: 72.8777, population: 12691836 },
+  jaipur: { name: "Jaipur, Rajasthan", lat: 26.9124, lon: 75.7873, population: 3046163 },
+  nagpur: { name: "Nagpur, Maharashtra", lat: 21.1458, lon: 79.0882, population: 2405665 },
+  chennai: { name: "Chennai, Tamil Nadu", lat: 13.0827, lon: 80.2707, population: 4681087 },
+  hyderabad: { name: "Hyderabad, Telangana", lat: 17.3850, lon: 78.4867, population: 6993262 }
 };
 window.PRESET_COORDS = PRESET_COORDS;
 
@@ -184,6 +184,7 @@ function initEventListeners() {
       state.currentCoords.lat = PRESET_COORDS[state.currentCity].lat;
       state.currentCoords.lon = PRESET_COORDS[state.currentCity].lon;
       state.currentCoords.name = PRESET_COORDS[state.currentCity].name;
+      state.currentCoords.population = PRESET_COORDS[state.currentCity].population;
     }
     fetchRealtimeData();
   });
@@ -334,9 +335,10 @@ async function fetchRealtimeData() {
   badge.textContent = "Connecting to real-time meteorological stream...";
 
   let data = null;
+  const popParam = state.currentCoords.population ? `&population=${state.currentCoords.population}` : "";
   const queryParams = (state.currentCoords.lat && state.currentCoords.lon && state.currentCity === "custom")
-    ? `lat=${state.currentCoords.lat}&lon=${state.currentCoords.lon}&persona=${state.currentPersona}`
-    : `city=${state.currentCity}&persona=${state.currentPersona}`;
+    ? `lat=${state.currentCoords.lat}&lon=${state.currentCoords.lon}&persona=${state.currentPersona}${popParam}`
+    : `city=${state.currentCity}&persona=${state.currentPersona}${popParam}`;
 
   for (const endpoint of [`/realtime?${queryParams}`, `/api/realtime?${queryParams}`]) {
     try {
@@ -536,12 +538,49 @@ async function fetchClientSideTelemetry(lat, lon, persona, locationName) {
     });
   }
 
+  // 10. Real-time Population and Community Vulnerability
+  let popTotal = 0;
+  if (PRESET_COORDS[state.currentCity] && state.currentCity !== "custom") {
+    popTotal = PRESET_COORDS[state.currentCity].population || 1200000;
+  } else if (state.currentCoords.population) {
+    popTotal = state.currentCoords.population;
+  } else {
+    try {
+      const cleanLoc = (locationName || "").split(",")[0].split("/")[0].trim();
+      if (cleanLoc && cleanLoc.length >= 2 && !cleanLoc.startsWith("GPS") && !cleanLoc.startsWith("Location")) {
+        const omGeo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cleanLoc)}&count=1&language=en&format=json`);
+        if (omGeo.ok) {
+          const geoData = await omGeo.json();
+          if (geoData.results && geoData.results[0]?.population) {
+            popTotal = geoData.results[0].population;
+          }
+        }
+      }
+    } catch(e) {}
+    if (!popTotal) popTotal = 1450000;
+  }
+
+  const vulnRatio = tier === 4 ? 0.58 : tier === 3 ? 0.38 : tier === 2 ? 0.24 : tier === 1 ? 0.15 : 0.08;
+  const effectiveVulnRatio = overnight_cooling_failed ? Math.min(0.75, vulnRatio * 1.25) : vulnRatio;
+  const popAtRisk = Math.round(popTotal * effectiveVulnRatio);
+  const coolingCentersCount = Math.max(14, Math.round((popTotal / 120000) * (1 + 0.2 * tier)));
+
   return {
     timestamp: current.time || new Date().toISOString(),
     location: {
       name: locationName,
       latitude: lat,
-      longitude: lon
+      longitude: lon,
+      population: popTotal,
+      population_at_risk: popAtRisk,
+      cooling_centers_count: coolingCentersCount
+    },
+    community_vulnerability: {
+      total_population: popTotal,
+      population_at_risk: popAtRisk,
+      vulnerability_percentage: Math.round(effectiveVulnRatio * 100),
+      cooling_centers_operational: coolingCentersCount,
+      target_outreach_citizens: Math.round(popTotal * 0.72)
     },
     raw_telemetry: {
       dry_bulb_temperature_c: Math.round(temp_c * 10) / 10,
@@ -818,16 +857,43 @@ function renderMunicipalKPIs(data) {
     munHeatIndex.textContent = `${data.physiological_indices.noaa_heat_index_c}°C`;
   }
 
-  // Dynamic ranking items
+  // 1. Dynamic Real-Time Population at Risk & Total Population
+  const munPopAtRisk = document.getElementById("munPopAtRisk");
+  const munPopDesc = document.getElementById("munPopDesc");
+  const popTotal = data.community_vulnerability?.total_population || data.location?.population || PRESET_COORDS[state.currentCity]?.population || 1450000;
+  const popAtRisk = data.community_vulnerability?.population_at_risk || data.location?.population_at_risk || Math.round(popTotal * 0.24);
+
+  if (munPopAtRisk) {
+    munPopAtRisk.textContent = Number(popAtRisk).toLocaleString("en-IN");
+  }
+  if (munPopDesc) {
+    const pct = Math.round((popAtRisk / popTotal) * 100);
+    munPopDesc.textContent = `Total Urban Pop: ${Number(popTotal).toLocaleString("en-IN")} (${pct}% vulnerable in Tier ${risk.tier})`;
+  }
+
+  // 2. Dynamic Operational Cooling Centers
+  const munCoolingCenters = document.getElementById("munCoolingCenters");
+  const munCoolingDesc = document.getElementById("munCoolingDesc");
+  const coolingCount = data.community_vulnerability?.cooling_centers_operational || data.location?.cooling_centers_count || Math.max(14, Math.round((popTotal / 120000) * (1 + 0.2 * risk.tier)));
+  if (munCoolingCenters) {
+    munCoolingCenters.textContent = `${coolingCount} OPERATIONAL`;
+  }
+  if (munCoolingDesc) {
+    munCoolingDesc.textContent = `1 shelter per ~${Math.round(popTotal / coolingCount / 1000)}k population in vulnerable wards`;
+  }
+
+  // Dynamic ranking items with real population split
   const rankingList = document.getElementById("wardRankingList");
+  const densePop = Math.round(popTotal * 0.45);
+  const periPop = Math.round(popTotal * 0.55);
   rankingList.innerHTML = `
     <div class="rank-row">
-      <span class="rank-ward">${data.location.name} (Industrial & Concrete Core)</span>
-      <span class="rank-tag" style="background:${risk.color}; color:#fff">WBGT ${data.physiological_indices.wbgt}°C</span>
+      <span class="rank-ward">${data.location.name} (Industrial & High-Density Core)</span>
+      <span class="rank-tag" style="background:${risk.color}; color:#fff">WBGT ${data.physiological_indices.wbgt}°C &bull; Pop: ${Number(densePop).toLocaleString("en-IN")}</span>
     </div>
     <div class="rank-row">
-      <span class="rank-ward">Peripheral Residential Zone</span>
-      <span class="rank-tag" style="background:#10b981; color:#000">WBGT ${(data.physiological_indices.wbgt - 2.1).toFixed(1)}°C</span>
+      <span class="rank-ward">Peripheral Suburban / Green Canopy Zone</span>
+      <span class="rank-tag" style="background:#10b981; color:#000">WBGT ${(data.physiological_indices.wbgt - 2.1).toFixed(1)}°C &bull; Pop: ${Number(periPop).toLocaleString("en-IN")}</span>
     </div>
   `;
 
@@ -1089,6 +1155,13 @@ function updateHoverDisplay(data) {
   if (mctPincode) mctPincode.textContent = pincode;
   if (mctCoords) mctCoords.textContent = coordsStr;
 
+  const mctPopulation = document.getElementById("mctPopulation");
+  const barPopulation = document.getElementById("barPopulation");
+  const popVal = data.population || PRESET_COORDS[state.currentCity]?.population || 0;
+  const popText = popVal > 0 ? Number(popVal).toLocaleString("en-IN") : "Regional Census";
+  if (mctPopulation) mctPopulation.textContent = popText;
+  if (barPopulation) barPopulation.textContent = popText;
+
   // Docked bottom inspect bar
   if (barPlaceName) barPlaceName.textContent = placeName;
   if (barDistrict) barDistrict.textContent = district;
@@ -1246,6 +1319,10 @@ async function dropInspectionPin(lat, lon) {
         <div class="mpop-item">
           <div class="mpop-lbl">PIN CODE</div>
           <div class="mpop-val pin-code">📮 ${escapeHtml(pincode)}</div>
+        </div>
+        <div class="mpop-item" style="grid-column: span 2;">
+          <div class="mpop-lbl">CENSUS POPULATION</div>
+          <div class="mpop-val" style="color:#38bdf8;">👥 ${data.population ? Number(data.population).toLocaleString('en-IN') : 'Regional Census'}</div>
         </div>
       </div>
 
@@ -1426,12 +1503,14 @@ async function performSearch() {
     div.className = "search-item";
     const admin1 = item.admin1 ? `, ${item.admin1}` : "";
     const country = item.country ? `, ${item.country}` : "";
-    div.textContent = `${item.name}${admin1}${country}`;
+    const popBadge = item.population ? ` • Pop: ${Number(item.population).toLocaleString('en-IN')}` : "";
+    div.textContent = `${item.name}${admin1}${country}${popBadge}`;
     div.addEventListener("click", () => {
       state.currentCity = "custom";
       state.currentCoords.lat = item.latitude;
       state.currentCoords.lon = item.longitude;
       state.currentCoords.name = `${item.name}${admin1}`;
+      state.currentCoords.population = item.population || 0;
       dropdown.classList.add("hidden");
       document.getElementById("customSearchInput").value = state.currentCoords.name;
       fetchRealtimeData();

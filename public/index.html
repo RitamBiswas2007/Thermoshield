@@ -369,13 +369,13 @@
         </div>
         <div class="stat-kpi-card">
           <div class="kpi-label">POPULATION AT RISK</div>
-          <div class="kpi-val" id="munPopAtRisk">418,000</div>
-          <div class="kpi-desc">Outdoor workforce & elderly in concrete wards</div>
+          <div class="kpi-val" id="munPopAtRisk">--</div>
+          <div class="kpi-desc" id="munPopDesc">Outdoor workforce & elderly in concrete wards</div>
         </div>
         <div class="stat-kpi-card">
           <div class="kpi-label">ACTIVE COOLING CENTERS</div>
-          <div class="kpi-val color-green" id="munCoolingCenters">28 OPERATIONAL</div>
-          <div class="kpi-desc">Public shelters, PHCs & ORS booths</div>
+          <div class="kpi-val color-green" id="munCoolingCenters">-- OPERATIONAL</div>
+          <div class="kpi-desc" id="munCoolingDesc">Public shelters, PHCs & ORS booths</div>
         </div>
       </div>
 
@@ -431,6 +431,10 @@
                   <span class="mct-lbl">PIN CODE</span>
                   <span class="mct-val mct-highlight" id="mctPincode">--</span>
                 </div>
+                <div class="mct-item" style="grid-column: span 2;">
+                  <span class="mct-lbl">POPULATION</span>
+                  <span class="mct-val" id="mctPopulation" style="color:#38bdf8;">--</span>
+                </div>
               </div>
               <div class="mct-footer">
                 <span class="mct-coords" id="mctCoords">--</span>
@@ -462,6 +466,14 @@
               <div class="inspect-text">
                 <div class="inspect-heading">PIN CODE</div>
                 <div class="inspect-val pin-highlight" id="barPincode">--</div>
+              </div>
+            </div>
+            <div class="inspect-sep"></div>
+            <div class="inspect-field">
+              <span class="inspect-ico">👥</span>
+              <div class="inspect-text">
+                <div class="inspect-heading">POPULATION</div>
+                <div class="inspect-val" id="barPopulation" style="color:#38bdf8;">--</div>
               </div>
             </div>
             <div class="inspect-sep"></div>
