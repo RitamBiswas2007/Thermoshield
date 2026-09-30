@@ -1389,7 +1389,7 @@ function closeIntegrationsModal() {
 // PWA Service Worker Registration
 function initServiceWorker() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/static/sw.js?v=2.2")
+    navigator.serviceWorker.register("/static/sw.js?v=3.0")
       .then((reg) => {
         reg.update();
         console.log("PWA Service Worker registered and checked for updates.");
