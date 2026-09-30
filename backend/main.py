@@ -35,6 +35,7 @@ app.add_middleware(
 
 
 @app.get("/api/health")
+@app.get("/health")
 def health_check():
     return {
         "status": "online",
@@ -46,11 +47,13 @@ def health_check():
 
 
 @app.get("/api/presets")
+@app.get("/presets")
 def list_presets():
     return PRESET_CITIES
 
 
 @app.get("/api/integrations")
+@app.get("/integrations")
 def get_integrations_status():
     """
     Returns current active telemetry and explicit requirements for upgrading
@@ -67,12 +70,14 @@ def get_integrations_status():
 
 
 @app.get("/api/search")
+@app.get("/search")
 def search_city(q: str = Query(..., min_length=2, description="City, town, or district name")):
     results = search_location(q)
     return {"query": q, "results": results}
 
 
 @app.get("/api/reverse-geocode")
+@app.get("/reverse-geocode")
 def get_reverse_geocode(
     lat: float = Query(..., description="Latitude of the point"),
     lon: float = Query(..., description="Longitude of the point")
@@ -84,6 +89,7 @@ def get_reverse_geocode(
 
 
 @app.get("/api/realtime")
+@app.get("/realtime")
 def get_realtime_data(
     lat: Optional[float] = None,
     lon: Optional[float] = None,
