@@ -3,13 +3,27 @@ import json
 import requests
 import datetime
 from typing import Dict, Any, List, Optional
-from biometeorology import (
-    calculate_wbgt,
-    calculate_heat_index,
-    calculate_utci_approx,
-    evaluate_nws_tier,
-    calculate_mortality_and_health_risk
-)
+try:
+    from biometeorology import (
+        calculate_wbgt,
+        calculate_heat_index,
+        calculate_utci_approx,
+        evaluate_nws_tier,
+        calculate_mortality_and_health_risk
+    )
+except ImportError:
+    from backend.biometeorology import (
+        calculate_wbgt,
+        calculate_heat_index,
+        calculate_utci_approx,
+        evaluate_nws_tier,
+        calculate_mortality_and_health_risk
+    )
+
+# Real-time weather provider configuration (Open-Meteo default, 100% free)
+WEATHER_PROVIDER = os.getenv("WEATHER_PROVIDER", "open-meteo")
+OPEN_METEO_API_ENDPOINT = os.getenv("OPEN_METEO_API_ENDPOINT", "https://api.open-meteo.com/v1/forecast")
+OPEN_METEO_GEOCODING_ENDPOINT = os.getenv("OPEN_METEO_GEOCODING_ENDPOINT", "https://geocoding-api.open-meteo.com/v1/search")
 
 # Detect provided Google Earth Engine credentials
 _gee_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "credentials", "gee-service-account.json")
@@ -40,10 +54,10 @@ PRESET_CITIES = {
 # Integration registry describing the real-time status and upgrade requirements
 SYSTEM_INTEGRATIONS = {
     "open_meteo": {
-        "name": "Open-Meteo Open Data Stream (WMO / ECMWF / GFS)",
-        "type": "Meteorological Numerical Model & Real-time Feeds",
+        "name": "Open-Meteo Operational Stream (WMO / ECMWF / GFS)",
+        "type": "Primary Real-Time Meteorological Numerical Model & Telemetry",
         "status": "ONLINE_ACTIVE",
-        "source": "https://api.open-meteo.com/v1/forecast",
+        "source": OPEN_METEO_API_ENDPOINT,
         "latency_sec": 0.45,
         "is_real_time": True,
         "fields_ingested": [
@@ -57,13 +71,13 @@ SYSTEM_INTEGRATIONS = {
         ]
     },
     "imd_enterprise": {
-        "name": "India Meteorological Department (IMD) AWS API",
-        "type": "Official National Ground Telemetry & Nowcast",
-        "status": "AWAITING_ENTERPRISE_KEY",
+        "name": "India Meteorological Department (IMD) Ground AWS Network",
+        "type": "Optional Enterprise Ground Telemetry Calibration",
+        "status": "OPTIONAL_CONNECTOR",
         "requirements": {
             "api_endpoint": "https://mausam.imd.gov.in/api/v1/aws_realtime",
             "auth_type": "Bearer Token / API Key from IMD Data Center",
-            "purpose": "Direct calibration against 550+ Automated Weather Stations (AWS) and Airport Met Offices"
+            "purpose": "Optional secondary calibration against 550+ IMD Automatic Weather Stations (AWS)"
         }
     },
     "google_earth_engine": {
@@ -97,7 +111,7 @@ def search_location(query: str) -> List[Dict[str, Any]]:
     """
     Real-time geocoding lookup for any Indian or global city/town.
     """
-    url = f"https://geocoding-api.open-meteo.com/v1/search?name={query}&count=5&language=en&format=json"
+    url = f"{OPEN_METEO_GEOCODING_ENDPOINT}?name={query}&count=5&language=en&format=json"
     try:
         resp = requests.get(url, timeout=5)
         if resp.status_code == 200:
@@ -337,7 +351,7 @@ def fetch_realtime_weather(lat: float, lon: float) -> Dict[str, Any]:
     Zero mock data. Completely genuine live values.
     """
     url = (
-        f"https://api.open-meteo.com/v1/forecast?"
+        f"{OPEN_METEO_API_ENDPOINT}?"
         f"latitude={lat}&longitude={lon}&"
         f"current=temperature_2m,relative_humidity_2m,wind_speed_10m,direct_normal_irradiance,shortwave_radiation,dew_point_2m,weather_code&"
         f"hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,direct_normal_irradiance&"
@@ -468,11 +482,13 @@ def get_realtime_heat_assessment(
         })
 
     # Compute current acute mortality & hospital surge risk
+    peak_day_wbgt = daily_forecast[0]["wbgt"] if daily_forecast else wbgt_data["wbgt"]
     mortality_risk_profile = calculate_mortality_and_health_risk(
         wbgt_c=wbgt_data["wbgt"],
         heat_index_c=heat_index_c,
         nighttime_min_c=nighttime_min,
-        persona=persona
+        persona=persona,
+        peak_day_wbgt=peak_day_wbgt
     )
 
     return {

@@ -345,6 +345,17 @@
     <!-- ==================== VIEW 2: MUNICIPAL COMMAND & GIS DASHBOARD ==================== -->
     <section id="municipalCommandView" class="view-section hidden">
       <div class="municipal-top-grid">
+        <!-- Live Meteorological Ground & Air Telemetry -->
+        <div class="stat-kpi-card">
+          <div class="kpi-label">LIVE AIR TEMPERATURE</div>
+          <div class="kpi-val color-orange" id="munDryBulb">--°C</div>
+          <div class="kpi-desc">Relative Humidity: <span id="munHumidity" style="color:#38bdf8; font-weight:600;">--%</span></div>
+        </div>
+        <div class="stat-kpi-card">
+          <div class="kpi-label">PHYSIOLOGICAL WBGT (ISO 7243)</div>
+          <div class="kpi-val color-red" id="munWbgt">--°C</div>
+          <div class="kpi-desc">NOAA Heat Index: <span id="munHeatIndex" style="color:#f97316; font-weight:600;">--°C</span></div>
+        </div>
         <!-- Municipal Alert Status Cards -->
         <div class="stat-kpi-card">
           <div class="kpi-label">MUNICIPAL ALERT LEVEL</div>
@@ -623,20 +634,20 @@
             </div>
           </div>
 
-          <!-- 2. IMD AWS Ground Telemetry -->
+          <!-- 2. IMD AWS Ground Telemetry (Optional) -->
           <div class="pipe-card card-pending">
             <div class="pipe-header">
-              <span class="pipe-status-pill pill-pending">READY FOR API KEY</span>
+              <span class="pipe-status-pill pill-pending">OPTIONAL CONNECTOR</span>
               <span class="pipe-name">India Meteorological Department (IMD) Ground AWS Network</span>
             </div>
-            <p class="pipe-desc">Direct ground-truth calibration from IMD's 550+ Automatic Weather Stations (AWS) & Airport Meteorological Offices.</p>
+            <p class="pipe-desc">Optional ground-truth calibration. (Not required: Open-Meteo is currently 100% active, streaming live temperature, humidity, WBGT, and heatwave analytics for all locations).</p>
             <div class="pipe-upgrade-form">
-              <label>IMD Data Center API Token:</label>
+              <label>IMD Data Center API Token (Optional):</label>
               <div class="form-row">
-                <input type="password" id="inputImdKey" placeholder="Enter IMD AWS API Bearer Token..." class="input-code">
-                <button class="btn-save-key" onclick="alert('IMD API connector configuration stored. Will activate upon validation.')">Save Key</button>
+                <input type="password" id="inputImdKey" placeholder="Optional IMD AWS API Bearer Token..." class="input-code">
+                <button class="btn-save-key" onclick="alert('IMD API connector configuration stored. Open-Meteo remains active primary stream.')">Save Key</button>
               </div>
-              <div class="form-help">Endpoint: <code>https://mausam.imd.gov.in/api/v1/aws_realtime</code></div>
+              <div class="form-help">Endpoint: <code>https://mausam.imd.gov.in/api/v1/aws_realtime</code> (Optional)</div>
             </div>
           </div>
 

@@ -1,5 +1,5 @@
 import math
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 
 def calculate_wet_bulb_temperature(temperature_c: float, relative_humidity: float) -> float:
     """
@@ -267,20 +267,25 @@ def calculate_mortality_and_health_risk(
     nighttime_min_c: float,
     persona: str = "delivery",
     elderly_density_pct: float = 12.5,
-    outdoor_worker_pct: float = 28.0
+    outdoor_worker_pct: float = 28.0,
+    peak_day_wbgt: Optional[float] = None
 ) -> Dict[str, Any]:
     """
     Computes automated Mortality Risk Index and Hospital Emergency Surge projections
     based on biometeorological stress (WBGT, NOAA HI), lack of overnight cooling,
     and demographic exposure factors (Lancet Planetary Health & Ahmedabad HAP models).
     """
-    # Baseline thermal load above safe threshold (28°C WBGT)
-    thermal_excess = max(0.0, wbgt_c - 27.5)
+    # Baseline nocturnal cardiac & cellular stress when night temp fails to cool below 26°C
+    night_failure_baseline = 18.5 if nighttime_min_c >= 26.0 else 0.0
 
-    # Base excess mortality multiplier (approx 8.5% - 9.5% excess mortality per °C WBGT above 28°C)
-    base_mortality_spike = thermal_excess * 9.2
+    # Effective thermal strain accounts for daytime peak exposure as well as current level
+    effective_wbgt = max(wbgt_c, peak_day_wbgt or wbgt_c)
+    thermal_excess = max(0.0, effective_wbgt - 27.0)
 
-    # Overnight cooling failure multiplier (+35% cumulative nocturnal cardiac and heat strain)
+    # Base excess mortality multiplier
+    base_mortality_spike = night_failure_baseline + (thermal_excess * 9.2)
+
+    # Overnight cooling failure multiplier (+35% cumulative nocturnal cardiac load)
     nocturnal_multiplier = 1.35 if nighttime_min_c >= 26.0 else 1.0
 
     # Demographic vulnerability weighting (elderly and outdoor informal workers)

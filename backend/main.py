@@ -210,16 +210,21 @@ async def serve_index():
 @app.get("/static/{file_name:path}")
 async def serve_static_asset(file_name: str):
     f_dir = get_frontend_dir()
-    target = os.path.join(f_dir, file_name)
+    clean_name = file_name
+    if clean_name.startswith("static/"):
+        clean_name = clean_name[len("static/"):]
+    target = os.path.join(f_dir, clean_name)
+    if not os.path.exists(target):
+        target = os.path.join(f_dir, file_name)
     if os.path.exists(target):
         media_type = "text/plain"
-        if file_name.endswith(".css"):
+        if target.endswith(".css"):
             media_type = "text/css"
-        elif file_name.endswith(".js"):
+        elif target.endswith(".js"):
             media_type = "application/javascript"
-        elif file_name.endswith(".json"):
+        elif target.endswith(".json"):
             media_type = "application/json"
-        elif file_name.endswith(".svg"):
+        elif target.endswith(".svg"):
             media_type = "image/svg+xml"
         return FileResponse(target, media_type=media_type)
     raise HTTPException(status_code=404, detail=f"Asset {file_name} not found")
