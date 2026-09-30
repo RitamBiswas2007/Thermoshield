@@ -259,3 +259,90 @@ def generate_operational_instructions(tier: int, persona: str, overnight_cooling
         cmd["persona_tip"] = "Stay in the coolest room of the house. Wet cloth on wrists/neck if AC is unavailable. Check blood pressure frequently."
 
     return cmd
+
+
+def calculate_mortality_and_health_risk(
+    wbgt_c: float,
+    heat_index_c: float,
+    nighttime_min_c: float,
+    persona: str = "delivery",
+    elderly_density_pct: float = 12.5,
+    outdoor_worker_pct: float = 28.0
+) -> Dict[str, Any]:
+    """
+    Computes automated Mortality Risk Index and Hospital Emergency Surge projections
+    based on biometeorological stress (WBGT, NOAA HI), lack of overnight cooling,
+    and demographic exposure factors (Lancet Planetary Health & Ahmedabad HAP models).
+    """
+    # Baseline thermal load above safe threshold (28°C WBGT)
+    thermal_excess = max(0.0, wbgt_c - 27.5)
+
+    # Base excess mortality multiplier (approx 8.5% - 9.5% excess mortality per °C WBGT above 28°C)
+    base_mortality_spike = thermal_excess * 9.2
+
+    # Overnight cooling failure multiplier (+35% cumulative nocturnal cardiac and heat strain)
+    nocturnal_multiplier = 1.35 if nighttime_min_c >= 26.0 else 1.0
+
+    # Demographic vulnerability weighting (elderly and outdoor informal workers)
+    demo_weight = (elderly_density_pct / 10.0) * 0.55 + (outdoor_worker_pct / 20.0) * 0.45
+    demo_multiplier = max(0.8, min(demo_weight, 1.8))
+
+    projected_excess_mortality = round(min(120.0, base_mortality_spike * nocturnal_multiplier * demo_multiplier), 1)
+
+    # Hospitalization / Emergency Room admission surge (exceeds mortality by factor of ~1.4 - 1.8)
+    hospital_surge_pct = round(min(175.0, projected_excess_mortality * 1.45 + (thermal_excess * 4.2)), 1)
+
+    # Scaled index from 0 to 100
+    mortality_risk_index = round(min(100.0, (projected_excess_mortality / 80.0) * 100.0), 1)
+
+    # Clinical and surge categorization
+    if mortality_risk_index < 20.0:
+        risk_level = "Baseline (Normal Health Load)"
+        risk_color = "#10b981"
+        hospital_status = "Normal ER Capacity"
+        icu_recommendation = "Standard operating medical protocols. Routine public hydration."
+    elif mortality_risk_index < 40.0:
+        risk_level = "Elevated (+10-25% Excess Risk)"
+        risk_color = "#eab308"
+        hospital_status = "Moderate Heat Casualty Intake (+20-35%)"
+        icu_recommendation = "Pre-stock Oral Rehydration Salts (ORS) & ice-water immersion sheets at PHCs."
+    elif mortality_risk_index < 65.0:
+        risk_level = "Severe (+25-50% Excess Mortality Spike)"
+        risk_color = "#f97316"
+        hospital_status = "High Casualty Surge (ER Strain +35-65%)"
+        icu_recommendation = "Reserve 20% casualty ward beds for heat stroke; pre-chill intravenous saline."
+    else:
+        risk_level = "Critical Threat (>50% Excess Mortality Spike)"
+        risk_color = "#ef4444"
+        hospital_status = "CRITICAL CODE RED SURGE (>65% ER Spike)"
+        icu_recommendation = "Emergency disaster protocol: mobilize extra triage shifts, deploy mobile misting ambulances."
+
+    clinical_threats = []
+    if wbgt_c >= 29.5:
+        clinical_threats.append("Exertional Heat Exhaustion & Rhabdomyolysis")
+    if nighttime_min_c >= 26.0:
+        clinical_threats.append("Nocturnal Cardiovascular Collapse & Arrhythmia")
+    if heat_index_c >= 40.0:
+        clinical_threats.append("Acute Kidney Injury (AKI) & Hyponatremia")
+    if wbgt_c >= 32.5:
+        clinical_threats.append("Hyperpyrexia & Multi-Organ Failure (Heat Stroke)")
+
+    if not clinical_threats:
+        clinical_threats.append("Mild Dehydration & Heat Fatigue")
+
+    return {
+        "mortality_risk_index": mortality_risk_index,
+        "projected_excess_mortality_pct": projected_excess_mortality,
+        "hospital_surge_pct": hospital_surge_pct,
+        "risk_level": risk_level,
+        "risk_color": risk_color,
+        "hospital_status": hospital_status,
+        "icu_recommendation": icu_recommendation,
+        "clinical_threats": clinical_threats,
+        "demographics_factored": {
+            "elderly_density_pct": elderly_density_pct,
+            "outdoor_worker_pct": outdoor_worker_pct,
+            "vulnerability_multiplier": round(demo_multiplier, 2)
+        }
+    }
+

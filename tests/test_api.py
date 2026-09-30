@@ -13,7 +13,8 @@ from biometeorology import (
     calculate_wbgt,
     calculate_heat_index,
     calculate_utci_approx,
-    evaluate_nws_tier
+    evaluate_nws_tier,
+    calculate_mortality_and_health_risk
 )
 from realtime_service import PRESET_CITIES, search_location
 
@@ -45,7 +46,20 @@ def test_biometeorology_calculations():
     assert "tier_escalated" in tier_info
     assert tier_info["tier_escalated"] is True
     assert tier_info["tier"] >= 3
-    print("All biometeorological calculation tests passed!")
+
+    # Test Mortality & Hospital Surge Risk calculation
+    mortality_res = calculate_mortality_and_health_risk(
+        wbgt_c=32.0,
+        heat_index_c=44.0,
+        nighttime_min_c=28.5,
+        persona="delivery"
+    )
+    assert "mortality_risk_index" in mortality_res
+    assert "projected_excess_mortality_pct" in mortality_res
+    assert "hospital_surge_pct" in mortality_res
+    assert mortality_res["projected_excess_mortality_pct"] > 0.0
+    assert mortality_res["hospital_surge_pct"] > mortality_res["projected_excess_mortality_pct"]
+    print("All biometeorological & mortality calculation tests passed!")
 
 
 def test_presets_and_search():

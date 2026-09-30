@@ -1,25 +1,42 @@
 {
   "version": 2,
+  "functions": {
+    "api/**/*.py": {
+      "includeFiles": "api/frontend/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
       "destination": "/api/index.py"
     },
     {
-      "source": "/static/(.*)",
-      "destination": "/frontend/$1"
+      "source": "/health",
+      "destination": "/api/index.py"
     },
     {
-      "source": "/sw.js",
-      "destination": "/frontend/sw.js"
+      "source": "/realtime",
+      "destination": "/api/index.py"
     },
     {
-      "source": "/manifest.json",
-      "destination": "/frontend/manifest.json"
+      "source": "/search",
+      "destination": "/api/index.py"
     },
     {
-      "source": "/",
-      "destination": "/frontend/index.html"
+      "source": "/reverse-geocode",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/presets",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/integrations",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/dispatch-alert",
+      "destination": "/api/index.py"
     }
   ],
   "headers": [
@@ -30,6 +47,13 @@
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
         { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
       ]
     }
   ]

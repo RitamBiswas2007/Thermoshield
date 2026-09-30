@@ -7,7 +7,8 @@ from biometeorology import (
     calculate_wbgt,
     calculate_heat_index,
     calculate_utci_approx,
-    evaluate_nws_tier
+    evaluate_nws_tier,
+    calculate_mortality_and_health_risk
 )
 
 # Detect provided Google Earth Engine credentials
@@ -445,6 +446,12 @@ def get_realtime_heat_assessment(
         max_solar = max(vals["solars"])
         d_wbgt = calculate_wbgt(max_t, avg_rh, max_solar, 2.0)["wbgt"]
         d_eval = evaluate_nws_tier(d_wbgt, min_t, persona)
+        d_mortality = calculate_mortality_and_health_risk(
+            wbgt_c=d_wbgt,
+            heat_index_c=calculate_heat_index(max_t, avg_rh),
+            nighttime_min_c=min_t,
+            persona=persona
+        )
         
         daily_forecast.append({
             "date": d_str,
@@ -454,8 +461,19 @@ def get_realtime_heat_assessment(
             "tier": d_eval["tier"],
             "tier_name": d_eval["tier_name"],
             "color": d_eval["color"],
-            "overnight_cooling_failed": d_eval["overnight_cooling_failed"]
+            "overnight_cooling_failed": d_eval["overnight_cooling_failed"],
+            "mortality_spike_pct": d_mortality["projected_excess_mortality_pct"],
+            "hospital_surge_pct": d_mortality["hospital_surge_pct"],
+            "hospital_status": d_mortality["hospital_status"]
         })
+
+    # Compute current acute mortality & hospital surge risk
+    mortality_risk_profile = calculate_mortality_and_health_risk(
+        wbgt_c=wbgt_data["wbgt"],
+        heat_index_c=heat_index_c,
+        nighttime_min_c=nighttime_min,
+        persona=persona
+    )
 
     return {
         "timestamp": current.get("time"),
@@ -480,6 +498,7 @@ def get_realtime_heat_assessment(
             "noaa_heat_index_c": heat_index_c,
             "utci_thermal_stress_c": utci_c
         },
+        "mortality_and_health_risk": mortality_risk_profile,
         "satellite_thermal": {
             "source": "Google Earth Engine (Landsat 8/9 & Sentinel-3 TIRS)",
             "service_account": _gee_client_email,
