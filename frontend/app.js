@@ -221,9 +221,21 @@ function initEventListeners() {
   document.getElementById("btnResetTimer").addEventListener("click", resetTimer);
 
   // Modal open/close
-  document.getElementById("openIntegrationsBtn").addEventListener("click", openIntegrationsModal);
-  document.getElementById("closeIntegrationsBtn").addEventListener("click", closeIntegrationsModal);
-  document.getElementById("btnCloseModalBottom").addEventListener("click", closeIntegrationsModal);
+  document.getElementById("openSettingsBtn").addEventListener("click", openSettingsModal);
+  document.getElementById("closeSettingsBtn").addEventListener("click", closeSettingsModal);
+  document.getElementById("btnCloseModalBottom").addEventListener("click", closeSettingsModal);
+
+  // Theme Toggle
+  const themeToggle = document.getElementById("themeToggle");
+  themeToggle.addEventListener("change", function(e) {
+    if (e.target.checked) {
+      document.body.classList.remove("dark-theme");
+      document.body.classList.add("light-theme");
+    } else {
+      document.body.classList.remove("light-theme");
+      document.body.classList.add("dark-theme");
+    }
+  });
   document.getElementById("btnFindNearestShelter").addEventListener("click", () => {
     switchView("municipal");
     if (state.leafletMap) {
@@ -1520,12 +1532,12 @@ async function performSearch() {
 }
 
 // Modal handling
-function openIntegrationsModal() {
-  document.getElementById("integrationsModal").classList.remove("hidden");
+function openSettingsModal() {
+  document.getElementById("settingsModal").classList.remove("hidden");
 }
 
-function closeIntegrationsModal() {
-  document.getElementById("integrationsModal").classList.add("hidden");
+function closeSettingsModal() {
+  document.getElementById("settingsModal").classList.add("hidden");
 }
 
 // PWA Service Worker Registration
